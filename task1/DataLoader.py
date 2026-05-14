@@ -1,105 +1,82 @@
-import os
-from PIL import Image
+import os #处理文件路径
+from PIL import Image #pillow库 读取图片文件
 import torch
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
-from sklearn.model_selection import train_test_split
+from torch.utils.data import Dataset, DataLoader #数据处理
+from torchvision import transforms #图像预处理（比如变成224x224)
+from sklearn.model_selection import train_test_split #随机切分训练集&测试集
 
-class PetDataset(Dataset):
-    """自定义宠物数据集"""
-    def __init__(self, image_paths, labels, transform=None):
-        self.image_paths = image_paths
-        self.labels = labels
-        self.transform = transform
-
+#定义petdataset 类【初始化+图片数量+取图片getitem】
+class PetDataset(Dataset): #继承了pytorch里的dataset类，在这个基础上加入init里新定义的3个
+    def __init__(self, image_paths, labels, transform = None):
+        self.image_paths = image_paths 
+        self.labels = labels 
+        self.transform = transform 
+    
     def __len__(self):
         return len(self.image_paths)
-
+    
     def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
-        # 强制转换为 RGB，防止有些灰度图报错
-        image = Image.open(img_path).convert('RGB')
-        label = self.labels[idx]
+        image_path = self.image_paths[idx]
+        image = Image.open(image_path).convert('RGB')#打开图片，转为RGB三色模式
+        label= self.labels[idx]
 
-        if self.transform:
+        if self.transform: #transform != None,就是有预处理的意思
             image = self.transform(image)
-
+        
         return image, label
 
-def prepare_data(data_dir='data'):
-    """从 images 文件夹提取图片路径和标签"""
+def prepare_data_from_list(data_dir = 'data'):
+    list_file = os.path.join(data_dir, 'annotations', 'list.txt')
     images_dir = os.path.join(data_dir, 'images')
-    
-    # 过滤掉 macOS 的 .DS_Store 等隐藏文件，只取 jpg
-    all_images = [f for f in os.listdir(images_dir) if f.endswith('.jpg')]
-    
     image_paths = []
     labels = []
-    class_to_idx = {}
-    current_idx = 0
+    idx_to_class = {}
 
-    for img_name in all_images:
-        # Oxford-IIIT Pet 文件名格式：类名_数字.jpg (例如: Abyssinian_1.jpg 或 american_bulldog_100.jpg)
-        # 用 '_' 分割并去掉最后一部分，剩下的拼起来就是类名
-        class_name = "_".join(img_name.split('_')[:-1])
+    with open(list_file, 'r') as f:
+        lines = f.readlines()
+    
+    for line in lines:
+        if line.startswith('#'):
+            continue
+        parts = line.strip().split()
+        if len(parts) < 4:
+            continue
+        img_name = parts[0] + '.jpg'
+        label = int(parts[1]) - 1 #要-1，是因为label的作用是下标，从0开始
+        class_name = parts[0].rsplit('_', 1)[0]
+        full_path = os.path.join(images_dir, img_name)
+        if label not in idx_to_class:
+                idx_to_class[label] = class_name
+                
 
-        if class_name not in class_to_idx:
-            class_to_idx[class_name] = current_idx
-            current_idx += 1
+        if os.path.exists(full_path):
+            image_paths.append(full_path)
+            labels.append(label)
+        
+    return image_paths, labels, idx_to_class
 
-        image_paths.append(os.path.join(images_dir, img_name))
-        labels.append(class_to_idx[class_name])
 
-    return image_paths, labels, class_to_idx
 
-def get_dataloaders(data_dir='data', batch_size=32, test_split=0.2):
-    """生成训练和验证的 DataLoader"""
-    image_paths, labels, class_to_idx = prepare_data(data_dir)
-
-    # 按照标签比例进行分层拆分 (Stratified Split)，保证训练集和验证集类别分布一致
-    train_paths, val_paths, train_labels, val_labels = train_test_split(
-        image_paths, labels, test_size=test_split, random_state=42, stratify=labels
+def get_dataloaders(data_dir = 'data', batch_size = 32):
+    all_paths, all_labels, idx_to_class = prepare_data_from_list(data_dir)
+    train_paths, val_paths, train_labels, val_labels = train_test_split(all_paths, all_labels, test_size=0.2, stratify=all_labels, random_state = 42)
+    train_transform = transforms.Compose(
+        [transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        transforms.RandomHorizontalFlip()]
+    )
+    val_transform = transforms.Compose(
+        [transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ]
     )
 
-    # 训练集数据增强：随机裁剪、随机水平翻转 + ImageNet 标准归一化
-    train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    train_ds = PetDataset(train_paths, train_labels, transform=train_transform)
+    val_ds = PetDataset(val_paths, val_labels, transform=val_transform)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2)
+    val_loader = DataLoader(val_ds, batch_size = batch_size, shuffle = False, num_workers=2)
 
-    # 验证集数据处理：中心裁剪 + ImageNet 标准归一化
-    val_transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
+    return train_loader, val_loader, idx_to_class
 
-    train_dataset = PetDataset(train_paths, train_labels, transform=train_transform)
-    val_dataset = PetDataset(val_paths, val_labels, transform=val_transform)
-
-    # macOS 环境下 num_workers 建议设为 0 或 2，设太大容易报错
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
-
-    return train_loader, val_loader, class_to_idx
-
-# ================= 测试代码 =================
-# 你可以直接运行 python DataLoader.py 来验证环境是否调通
-if __name__ == '__main__':
-    print("正在初始化 DataLoader...")
-    
-    # 假设你的终端当前处于 task1 目录下
-    train_loader, val_loader, class_mapping = get_dataloaders(data_dir='data', batch_size=16)
-    
-    print(f"成功找到 {len(class_mapping)} 个宠物类别！")
-    print(f"训练集 batch 数量: {len(train_loader)}")
-    print(f"验证集 batch 数量: {len(val_loader)}")
-    
-    # 抽一个 batch 出来看看维度
-    for images, labels in train_loader:
-        print(f"Image batch shape: {images.shape} (应为: [batch_size, 3, 224, 224])")
-        print(f"Label batch shape: {labels.shape} (应为: [batch_size])")
-        break # 看一个就够了
