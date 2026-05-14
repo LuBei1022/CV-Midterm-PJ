@@ -3,7 +3,7 @@ import os
 import glob
 from ultralytics import YOLO
 
-model_path = r"runs\detect\CV_Midterm_Runs\finetune_20_epochs-2\weights\best.pt"
+model_path = r"runs\detect\CV_Midterm_Runs\finetune_20_epochs\weights\best.pt"
 model = YOLO(model_path)
 
 input_folder = r'VisDrone2019-MOT-test-dev\VisDrone2019-MOT-test-dev\sequences\uav0000355_00001_v'
