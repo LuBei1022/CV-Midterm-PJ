@@ -78,7 +78,7 @@ pip install torch torchvision numpy pillow matplotlib scikit-learn swanlab
 
 任务一主要完成宠物图像分类任务。该任务基于 PyTorch 搭建图像分类模型，在 Oxford-IIIT Pet Dataset 数据集上进行训练和测试。
 
-本任务使用在 ImageNet 上预训练的 ResNet-18 或 ResNet-34 作为 Baseline，修改最后的输出层以适配宠物类别数，并进行微调训练。同时，本任务还包含超参数调优、预训练消融实验和注意力机制对比实验。
+本任务使用在 ImageNet 上预训练的 ResNet-18 作为 Baseline，修改最后的输出层以适配宠物类别数，并进行微调训练。同时，本任务还包含超参数调优、预训练消融实验和注意力机制对比实验。
 
 ## 1.2 主要文件说明
 
